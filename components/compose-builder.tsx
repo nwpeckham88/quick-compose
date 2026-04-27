@@ -149,7 +149,8 @@ export function ComposeBuilder() {
     setServices(services.map(s => s.uuid === uuid ? { ...s, [field]: value } : s));
   };
 
-  const updateServiceRestartPolicy = (uuid: string, value: string) => {
+  const updateServiceRestartPolicy = (uuid: string, value: string | null) => {
+    if (!value) return;
     const srv = services.find(s => s.uuid === uuid);
     const template = srv ? serviceTemplates.find(t => t.id === srv.templateId) : undefined;
     // Store undefined when the chosen value matches the template default to avoid redundant data
@@ -413,7 +414,7 @@ export function ComposeBuilder() {
                                 </div>
                                 <div className="space-y-1.5">
                                   <Label className="text-[11px] font-medium text-slate-700 block">Restart Policy</Label>
-                                  <Select value={resolveRestartPolicy(srv, template)} onValueChange={val => { if (val) updateServiceRestartPolicy(srv.uuid, val); }}>
+                                  <Select value={resolveRestartPolicy(srv, template)} onValueChange={val => updateServiceRestartPolicy(srv.uuid, val)}>
                                     <SelectTrigger className="h-8 text-xs shadow-none border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-500">
                                       <SelectValue />
                                     </SelectTrigger>
