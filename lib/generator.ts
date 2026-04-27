@@ -36,6 +36,7 @@ export type ConfiguredService = {
   ports: ConfiguredPort[];
   env: ConfiguredEnv[];
   networks: string[];
+  restartPolicy?: string; // overrides the template's restartPolicy
 };
 
 export function generateDockerCompose(
@@ -113,7 +114,14 @@ export function generateDockerCompose(
       }
     }
 
-    yaml += `    restart: ${template.restartPolicy || 'unless-stopped'}\n\n`;
+    if (template.devices && template.devices.length > 0) {
+      yaml += `    devices:\n`;
+      for (const device of template.devices) {
+        yaml += `      - ${device}\n`;
+      }
+    }
+
+    yaml += `    restart: ${srv.restartPolicy || template.restartPolicy || 'unless-stopped'}\n\n`;
   }
 
   // Global networks
