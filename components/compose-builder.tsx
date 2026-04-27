@@ -17,49 +17,52 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 const RESTART_POLICIES = ['unless-stopped', 'always', 'on-failure', 'no'] as const;
 const STORAGE_KEY = 'quick-compose-state';
 
-export function ComposeBuilder() {
-  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
-    puid: '1000',
-    pgid: '1000',
-    tz: 'Europe/London',
-    baseConfigDir: '/opt/appdata',
-    baseMediaDir: '/mnt/media',
-    baseDownloadsDir: '/mnt/downloads',
-    volumes: [],
-    networks: [],
-  });
+const getBrowserTimeZone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London';
+  } catch {
+    return 'Europe/London';
+  }
+};
 
-  const [services, setServices] = useState<ConfiguredService[]>([]);
+const createDefaultGlobalConfig = (tz = 'Europe/London'): GlobalConfig => ({
+  puid: '1000',
+  pgid: '1000',
+  tz,
+  baseConfigDir: '/opt/appdata',
+  baseMediaDir: '/mnt/media',
+  baseDownloadsDir: '/mnt/downloads',
+  volumes: [],
+  networks: [],
+});
+
+const loadInitialState = (): { globalConfig: GlobalConfig; services: ConfiguredService[] } => {
+  if (typeof window === 'undefined') {
+    return { globalConfig: createDefaultGlobalConfig(), services: [] };
+  }
+
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const { globalConfig: savedGlobal, services: savedServices } = JSON.parse(saved);
+      return {
+        globalConfig: savedGlobal || createDefaultGlobalConfig(),
+        services: savedServices || [],
+      };
+    }
+  } catch {
+    // ignore parse errors
+  }
+
+  return { globalConfig: createDefaultGlobalConfig(getBrowserTimeZone()), services: [] };
+};
+
+export function ComposeBuilder() {
+  const initialState = useMemo(() => loadInitialState(), []);
+  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(initialState.globalConfig);
+  const [services, setServices] = useState<ConfiguredService[]>(initialState.services);
   const [copied, setCopied] = useState(false);
   const [serviceFilter, setServiceFilter] = useState('');
-
-  // Load persisted state from localStorage on mount
-  useEffect(() => {
-    let restoredFromStorage = false;
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const { globalConfig: savedGlobal, services: savedServices } = JSON.parse(saved);
-        if (savedGlobal) setGlobalConfig(savedGlobal);
-        if (savedServices) setServices(savedServices);
-        restoredFromStorage = true;
-      }
-    } catch {
-      // ignore parse errors
-    }
-
-    // Auto-detect timezone only when there is no saved state
-    if (!restoredFromStorage) {
-      try {
-        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (browserTz) {
-          setGlobalConfig(prev => ({ ...prev, tz: browserTz }));
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
 
   // Persist state to localStorage whenever it changes
   useEffect(() => {
@@ -74,16 +77,7 @@ export function ComposeBuilder() {
     if (!confirm('Reset all services and settings? This cannot be undone.')) return;
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
     setServices([]);
-    setGlobalConfig({
-      puid: '1000',
-      pgid: '1000',
-      tz: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London'; } catch { return 'Europe/London'; } })(),
-      baseConfigDir: '/opt/appdata',
-      baseMediaDir: '/mnt/media',
-      baseDownloadsDir: '/mnt/downloads',
-      volumes: [],
-      networks: [],
-    });
+    setGlobalConfig(createDefaultGlobalConfig(getBrowserTimeZone()));
   }, []);
 
   const handleGlobalConfigChange = (field: keyof GlobalConfig, value: string) => {
@@ -419,7 +413,7 @@ export function ComposeBuilder() {
                                 </div>
                                 <div className="space-y-1.5">
                                   <Label className="text-[11px] font-medium text-slate-700 block">Restart Policy</Label>
-                                  <Select value={resolveRestartPolicy(srv, template)} onValueChange={val => updateServiceRestartPolicy(srv.uuid, val)}>
+                                  <Select value={resolveRestartPolicy(srv, template)} onValueChange={val => { if (val) updateServiceRestartPolicy(srv.uuid, val); }}>
                                     <SelectTrigger className="h-8 text-xs shadow-none border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-500">
                                       <SelectValue />
                                     </SelectTrigger>
