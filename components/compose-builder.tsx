@@ -1,19 +1,21 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash, Settings, Server, Copy, Check, Download, Network, HardDrive } from 'lucide-react';
-import { GlobalConfig, ConfiguredService, generateDockerCompose, GlobalNetwork, GlobalVolume } from '@/lib/generator';
-import { serviceTemplates } from '@/lib/data';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { Plus, Trash, Server, Copy, Check, Download, Network, HardDrive, CopyPlus, RotateCcw, Search } from 'lucide-react';
+import { GlobalConfig, ConfiguredService, generateDockerCompose, GlobalNetwork, GlobalVolume, resolveRestartPolicy } from '@/lib/generator';
+import { serviceTemplates, SERVICE_CATEGORIES } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+
+const RESTART_POLICIES = ['unless-stopped', 'always', 'on-failure', 'no'] as const;
+const STORAGE_KEY = 'quick-compose-state';
 
 export function ComposeBuilder() {
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
@@ -27,40 +29,75 @@ export function ComposeBuilder() {
     networks: [],
   });
 
-  useEffect(() => {
-    try {
-      const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (browserTz) {
-        setGlobalConfig(prev => ({ ...prev, tz: browserTz }));
-      }
-    } catch (err) {
-      // ignore
-    }
-  }, []);
-
-  const timezones = useMemo(() => {
-    try {
-      return Intl.supportedValuesOf('timeZone');
-    } catch {
-      return [
-        'Europe/London', 'Europe/Berlin', 'Europe/Paris', 
-        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-        'Australia/Sydney', 'Asia/Tokyo'
-      ];
-    }
-  }, []);
-
   const [services, setServices] = useState<ConfiguredService[]>([]);
   const [copied, setCopied] = useState(false);
+  const [serviceFilter, setServiceFilter] = useState('');
+
+  // Load persisted state from localStorage on mount
+  useEffect(() => {
+    let restoredFromStorage = false;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const { globalConfig: savedGlobal, services: savedServices } = JSON.parse(saved);
+        if (savedGlobal) setGlobalConfig(savedGlobal);
+        if (savedServices) setServices(savedServices);
+        restoredFromStorage = true;
+      }
+    } catch {
+      // ignore parse errors
+    }
+
+    // Auto-detect timezone only when there is no saved state
+    if (!restoredFromStorage) {
+      try {
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (browserTz) {
+          setGlobalConfig(prev => ({ ...prev, tz: browserTz }));
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  // Persist state to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ globalConfig, services }));
+    } catch {
+      // ignore quota / privacy errors
+    }
+  }, [globalConfig, services]);
+
+  const resetState = useCallback(() => {
+    if (!confirm('Reset all services and settings? This cannot be undone.')) return;
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+    setServices([]);
+    setGlobalConfig({
+      puid: '1000',
+      pgid: '1000',
+      tz: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London'; } catch { return 'Europe/London'; } })(),
+      baseConfigDir: '/opt/appdata',
+      baseMediaDir: '/mnt/media',
+      baseDownloadsDir: '/mnt/downloads',
+      volumes: [],
+      networks: [],
+    });
+  }, []);
 
   const handleGlobalConfigChange = (field: keyof GlobalConfig, value: string) => {
     setGlobalConfig((prev) => ({ ...prev, [field]: value }));
   };
 
-  const generateUuid = () => Math.random().toString(36).substring(2, 9);
+  const generateUuid = () => crypto.randomUUID();
 
   // Helper to replace base directories in volume paths
   const inferDefaultHostPath = (defaultHostPath: string) => {
+    // Already an absolute path (e.g. /var/run/docker.sock) — use as-is
+    if (defaultHostPath.startsWith('/')) {
+      return defaultHostPath;
+    }
     if (defaultHostPath.startsWith('media/')) {
       return `${globalConfig.baseMediaDir}/${defaultHostPath.replace('media/', '')}`;
     }
@@ -98,12 +135,32 @@ export function ComposeBuilder() {
     setServices([...services, newService]);
   };
 
+  const duplicateService = (uuid: string) => {
+    const srv = services.find(s => s.uuid === uuid);
+    if (!srv) return;
+    const shortId = crypto.randomUUID().slice(0, 4);
+    const clone: ConfiguredService = {
+      ...JSON.parse(JSON.stringify(srv)),
+      uuid: crypto.randomUUID(),
+      name: `${srv.name}-${shortId}`,
+    };
+    setServices([...services, clone]);
+  };
+
   const removeService = (uuid: string) => {
     setServices(services.filter((s) => s.uuid !== uuid));
   };
 
   const updateServiceField = (uuid: string, field: 'name', value: string) => {
     setServices(services.map(s => s.uuid === uuid ? { ...s, [field]: value } : s));
+  };
+
+  const updateServiceRestartPolicy = (uuid: string, value: string) => {
+    const srv = services.find(s => s.uuid === uuid);
+    const template = srv ? serviceTemplates.find(t => t.id === srv.templateId) : undefined;
+    // Store undefined when the chosen value matches the template default to avoid redundant data
+    const effective = value === (template?.restartPolicy || 'unless-stopped') ? undefined : value;
+    setServices(services.map(s => s.uuid === uuid ? { ...s, restartPolicy: effective } : s));
   };
 
   const updateServiceVolume = (serviceUuid: string, volumeId: string, value: string) => {
@@ -207,6 +264,35 @@ export function ComposeBuilder() {
     return generateDockerCompose(globalConfig, services, serviceTemplates);
   }, [globalConfig, services]);
 
+  const timezones = useMemo(() => {
+    try {
+      return Intl.supportedValuesOf('timeZone');
+    } catch {
+      return [
+        'Europe/London', 'Europe/Berlin', 'Europe/Paris',
+        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+        'Australia/Sydney', 'Asia/Tokyo',
+      ];
+    }
+  }, []);
+
+  const filteredTemplates = useMemo(() => {
+    if (!serviceFilter.trim()) return serviceTemplates;
+    const q = serviceFilter.toLowerCase();
+    return serviceTemplates.filter(
+      t => t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
+    );
+  }, [serviceFilter]);
+
+  const templatesByCategory = useMemo(() => {
+    const map: Record<string, typeof filteredTemplates> = {};
+    for (const cat of SERVICE_CATEGORIES) {
+      const list = filteredTemplates.filter(t => t.category === cat);
+      if (list.length > 0) map[cat] = list;
+    }
+    return map;
+  }, [filteredTemplates]);
+
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(composeFileString);
     setCopied(true);
@@ -230,13 +316,21 @@ export function ComposeBuilder() {
       {/* Left Panel: Configuration */}
       <div className="w-full lg:w-1/2 flex flex-col h-[50vh] lg:h-full bg-white border-b lg:border-b-0 lg:border-r border-slate-200">
         <div className="p-6 border-b border-slate-100 shrink-0">
-          <h1 className="text-lg font-bold tracking-tight mb-1 flex items-center gap-2">
-            <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center text-white text-[10px]">L</div>
-            Compose.io
-          </h1>
-          <p className="text-sm text-slate-500">
-            Build your Docker Compose stack with linuxserver.io images effortlessly.
-          </p>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h1 className="text-lg font-bold tracking-tight mb-1 flex items-center gap-2">
+                <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center text-white text-[10px]">L</div>
+                Compose.io
+              </h1>
+              <p className="text-sm text-slate-500">
+                Build your Docker Compose stack with linuxserver.io images effortlessly.
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={resetState} className="h-7 px-2 text-xs text-slate-400 hover:text-red-600 hover:bg-red-50 shrink-0" title="Reset all settings and services">
+              <RotateCcw className="w-3 h-3 mr-1" />
+              Reset
+            </Button>
+          </div>
         </div>
 
         <Tabs defaultValue="services" className="flex-1 flex flex-col min-h-0">
@@ -249,16 +343,33 @@ export function ComposeBuilder() {
 
           <TabsContent value="services" className="flex-1 overflow-hidden m-0 flex flex-col p-6 pt-4">
             
-            <div className="mb-4">
+            <div className="mb-4 space-y-2">
               <Label>Add a Service</Label>
-              <Select onValueChange={(val) => { if (val) addService(val); }} value="">
-                <SelectTrigger>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                <Input
+                  className="h-8 pl-7 text-xs shadow-none border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-500"
+                  placeholder="Search services..."
+                  value={serviceFilter}
+                  onChange={e => setServiceFilter(e.target.value)}
+                />
+              </div>
+              <Select onValueChange={(val) => { if (val) { addService(val); setServiceFilter(''); } }} value="">
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a service container..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {serviceTemplates.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  {Object.entries(templatesByCategory).map(([category, templates]) => (
+                    <SelectGroup key={category}>
+                      <SelectLabel>{category}</SelectLabel>
+                      {templates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
                   ))}
+                  {Object.keys(templatesByCategory).length === 0 && (
+                    <div className="px-3 py-4 text-xs text-slate-400 text-center">No services match your search.</div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -283,9 +394,14 @@ export function ComposeBuilder() {
                             <span>{srv.name}</span>
                             <Badge variant="secondary" className="font-mono text-[10px] font-normal ml-2 bg-slate-100 text-slate-500 border-none">{template.image}</Badge>
                           </AccordionTrigger>
-                          <Button variant="ghost" size="icon" className="text-slate-400 shrink-0 hover:text-red-600 hover:bg-slate-50" onClick={() => removeService(srv.uuid)}>
-                            <Trash className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center shrink-0">
+                            <Button variant="ghost" size="icon" title="Duplicate service" className="h-8 w-8 text-slate-400 hover:text-blue-600 hover:bg-slate-50" onClick={() => duplicateService(srv.uuid)}>
+                              <CopyPlus className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" title="Remove service" className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-slate-50" onClick={() => removeService(srv.uuid)}>
+                              <Trash className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                         <AccordionContent className="px-4 pb-4 border-t border-slate-100 mt-2 pt-4">
                           <div className="space-y-6">
@@ -300,6 +416,19 @@ export function ComposeBuilder() {
                                     value={srv.name} 
                                     onChange={(e) => updateServiceField(srv.uuid, 'name', e.target.value)} 
                                   />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <Label className="text-[11px] font-medium text-slate-700 block">Restart Policy</Label>
+                                  <Select value={resolveRestartPolicy(srv, template)} onValueChange={val => updateServiceRestartPolicy(srv.uuid, val)}>
+                                    <SelectTrigger className="h-8 text-xs shadow-none border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-500">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {RESTART_POLICIES.map(p => (
+                                        <SelectItem key={p} value={p}>{p}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                               </div>
                             </div>
