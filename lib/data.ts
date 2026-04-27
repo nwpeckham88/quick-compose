@@ -351,7 +351,7 @@ export const serviceTemplates: ServiceTemplate[] = [
     name: 'SWAG',
     category: 'Networking & Proxy',
     image: 'lscr.io/linuxserver/swag:latest',
-    description: 'Secure Web Application Gateway (Nginx proxy with Let\'s Encrypt).',
+    description: "Secure Web Application Gateway (Nginx proxy with Let's Encrypt).",
     customEnv: [
       { id: 'URL', label: 'Domain URL', defaultValue: 'yourdomain.com' },
       { id: 'VALIDATION', label: 'Validation Method', defaultValue: 'http' },
@@ -371,10 +371,10 @@ export const serviceTemplates: ServiceTemplate[] = [
     name: 'Nginx Proxy Manager',
     category: 'Networking & Proxy',
     image: 'jc21/nginx-proxy-manager:latest',
-    description: 'Expose your services with free SSL, powered by Let\'s Encrypt.',
+    description: "Expose your services with free SSL, powered by Let's Encrypt.",
     volumes: [
       { id: 'data', label: 'Data', defaultHostPath: 'nginx-proxy-manager/data', containerPath: '/data' },
-      { id: 'letsencrypt', label: 'Let\'s Encrypt', defaultHostPath: 'nginx-proxy-manager/letsencrypt', containerPath: '/etc/letsencrypt' },
+      { id: 'letsencrypt', label: "Let's Encrypt", defaultHostPath: 'nginx-proxy-manager/letsencrypt', containerPath: '/etc/letsencrypt' },
     ],
     ports: [
       { id: 'http', label: 'HTTP', defaultHostPort: '80', containerPort: '80' },
@@ -522,7 +522,7 @@ export const serviceTemplates: ServiceTemplate[] = [
     name: 'PostgreSQL',
     category: 'Databases',
     image: 'postgres:16',
-    description: 'The world\'s most advanced open source relational database.',
+    description: "The world's most advanced open source relational database.",
     customEnv: [
       { id: 'POSTGRES_PASSWORD', label: 'Postgres Password', defaultValue: 'postgres' },
       { id: 'POSTGRES_USER', label: 'Postgres User', defaultValue: 'postgres' },

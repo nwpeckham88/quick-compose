@@ -138,10 +138,11 @@ export function ComposeBuilder() {
   const duplicateService = (uuid: string) => {
     const srv = services.find(s => s.uuid === uuid);
     if (!srv) return;
+    const shortId = crypto.randomUUID().slice(0, 4);
     const clone: ConfiguredService = {
       ...JSON.parse(JSON.stringify(srv)),
-      uuid: generateUuid(),
-      name: `${srv.name}-copy`,
+      uuid: crypto.randomUUID(),
+      name: `${srv.name}-${shortId}`,
     };
     setServices([...services, clone]);
   };
@@ -155,7 +156,11 @@ export function ComposeBuilder() {
   };
 
   const updateServiceRestartPolicy = (uuid: string, value: string) => {
-    setServices(services.map(s => s.uuid === uuid ? { ...s, restartPolicy: value } : s));
+    const srv = services.find(s => s.uuid === uuid);
+    const template = srv ? serviceTemplates.find(t => t.id === srv.templateId) : undefined;
+    // Store undefined when the chosen value matches the template default to avoid redundant data
+    const effective = value === (template?.restartPolicy || 'unless-stopped') ? undefined : value;
+    setServices(services.map(s => s.uuid === uuid ? { ...s, restartPolicy: effective } : s));
   };
 
   const updateServiceVolume = (serviceUuid: string, volumeId: string, value: string) => {
