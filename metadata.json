@@ -1,0 +1,6 @@
+{
+  "name": "LinuxServer Compose Builder",
+  "description": "A utility app to easily build docker-compose files from linuxserver.io images with structured configuration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
