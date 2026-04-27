@@ -39,6 +39,14 @@ export type ConfiguredService = {
   restartPolicy?: string; // overrides the template's restartPolicy
 };
 
+/** Returns the effective restart policy for a configured service. */
+export function resolveRestartPolicy(
+  srv: Pick<ConfiguredService, 'restartPolicy'>,
+  template: Pick<import('./data').ServiceTemplate, 'restartPolicy'>
+): string {
+  return srv.restartPolicy || template.restartPolicy || 'unless-stopped';
+}
+
 export function generateDockerCompose(
   globalConfig: GlobalConfig,
   services: ConfiguredService[],
@@ -121,7 +129,7 @@ export function generateDockerCompose(
       }
     }
 
-    yaml += `    restart: ${srv.restartPolicy || template.restartPolicy || 'unless-stopped'}\n\n`;
+    yaml += `    restart: ${resolveRestartPolicy(srv, template)}\n\n`;
   }
 
   // Global networks

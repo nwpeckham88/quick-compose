@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Plus, Trash, Server, Copy, Check, Download, Network, HardDrive, CopyPlus, RotateCcw, Search } from 'lucide-react';
-import { GlobalConfig, ConfiguredService, generateDockerCompose, GlobalNetwork, GlobalVolume } from '@/lib/generator';
+import { GlobalConfig, ConfiguredService, generateDockerCompose, GlobalNetwork, GlobalVolume, resolveRestartPolicy } from '@/lib/generator';
 import { serviceTemplates, SERVICE_CATEGORIES } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -90,7 +90,7 @@ export function ComposeBuilder() {
     setGlobalConfig((prev) => ({ ...prev, [field]: value }));
   };
 
-  const generateUuid = () => Math.random().toString(36).substring(2, 9);
+  const generateUuid = () => crypto.randomUUID();
 
   // Helper to replace base directories in volume paths
   const inferDefaultHostPath = (defaultHostPath: string) => {
@@ -414,7 +414,7 @@ export function ComposeBuilder() {
                                 </div>
                                 <div className="space-y-1.5">
                                   <Label className="text-[11px] font-medium text-slate-700 block">Restart Policy</Label>
-                                  <Select value={srv.restartPolicy || template.restartPolicy || 'unless-stopped'} onValueChange={val => updateServiceRestartPolicy(srv.uuid, val)}>
+                                  <Select value={resolveRestartPolicy(srv, template)} onValueChange={val => updateServiceRestartPolicy(srv.uuid, val)}>
                                     <SelectTrigger className="h-8 text-xs shadow-none border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-500">
                                       <SelectValue />
                                     </SelectTrigger>
